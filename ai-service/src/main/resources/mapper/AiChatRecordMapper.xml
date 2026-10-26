@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="net.xdclass.mapper.AiChatRecordMapper">
+
+    <!-- 通用查询映射结果 -->
+    <resultMap id="BaseResultMap" type="net.xdclass.model.AiChatRecordDO">
+        <id column="id" property="id" />
+        <result column="account_id" property="accountId" />
+        <result column="session_id" property="sessionId" />
+        <result column="role" property="role" />
+        <result column="content" property="content" />
+        <result column="sequence" property="sequence" />
+        <result column="gmt_create" property="gmtCreate" />
+        <result column="content_type" property="contentType" />
+        <result column="intent_type" property="intentType" />
+    </resultMap>
+
+    <!-- 通用查询结果列 -->
+    <sql id="Base_Column_List">
+        id, account_id, session_id, role, content, sequence, gmt_create, content_type, intent_type
+    </sql>
+
+</mapper>
