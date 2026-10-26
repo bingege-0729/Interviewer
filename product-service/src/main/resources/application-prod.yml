@@ -1,0 +1,109 @@
+# 开发环境
+# 开发环境
+spring:
+  # nacos配置，需要改为服务器ip
+  cloud:
+    nacos:
+      discovery:
+        server-addr: 127.0.0.1:8849
+        username: nacos
+        password: nacos123
+        # 指定注册到 Nacos 的 IP（通过环境变量传入，不同机器传不同值）
+        ip: ${NACOS_REGISTER_IP:localhost}
+        port: ${server.port}
+
+  rabbitmq:
+    host: 127.0.0.1
+    port: 5672
+    virtual-host: /
+    username: root
+    password: abc123456
+    listener:
+      simple:
+        acknowledge-mode: manual
+  # db
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://127.0.0.1:3306/product_db?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+    username: root
+    password: 123456
+    hikari:
+      max-lifetime: 300000         # 5分钟，单位毫秒
+      connection-timeout: 30000
+      validation-timeout: 5000
+      idle-timeout: 60000
+      minimum-idle: 5
+      maximum-pool-size: 20
+      pool-name: HikariCP
+  hikari:
+    max-lifetime: 60000
+    connection-test-query: SELECT 1  # MySQL 验证语句
+  #  redis配置
+  data:
+    redis:
+      host: 127.0.0.1
+      port: 6379
+      password: abc123456
+#  锁配置 防止不同环境争抢一把锁
+lock:
+  prefix-key: pord
+
+mybatis-plus:
+  mapper-locations: classpath:mapper/*.xml
+  type-aliases-package: net.xdclass.model
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+
+knife4j:
+  enable: false
+
+springdoc:
+  group-configs:
+    - group: 'default'
+      paths-to-match: '/**'
+      packages-to-scan: net.xdclass.controller
+  api-docs:
+    enabled: true
+  swagger-ui:
+    enabled: true
+
+
+# 阿里云OSS配置
+aliyun:
+  oss:
+    secure-endpoint: oss-cn-beijing.aliyuncs.com    # 加密bucket访问域名
+    access-key-id: LTAI5t6XfkGPYywULCUfmT9T           # 访问密钥ID
+    access-key-secret: 2w6moAeexa2sxIrPZtCAppwr6k9Hx8     # 访问密钥Secret
+    secure-bucket-name: dcloud-interview-pri          # 加密访问的存储桶
+    secure-domain: https://test-file-pri.znoffer.com        # 加密访问的域名
+    public-endpoint: oss-cn-beijing.aliyuncs.com    # 公开bucket访问域名
+    public-bucket-name: dcloud-interview-pub         # 公开访问的存储桶（头像/题图）
+    public-domain: https://test-file-pub.znoffer.com  # 公开访问域名
+
+
+
+wechat:
+  login:
+    app-id: wx1b6107f84c2e8421
+    app-secret: 5c0d5a646b4f90202adf2f37c28e9676
+    qr-code-expire-time: 120
+    login-state-expire-time: 300
+    token: xdclass_wechat_token_2027
+  pay:
+    #商户号
+    mch-id: 1727684712
+    #公众号APPID
+    app-id: wx731dc40c4097e341
+    #商户API证书序列号
+    cert-serial-no: 19EC4EA464F61B6C757882327E6F805FB700FEA9
+    #APIv3密钥
+    api-v3-key: Xdclass168Xdclass168Xdclass16888
+    #商户API证书私钥的存放路径
+    private-key-path: classpath:/cert/apiclient_key.pem
+    #微信支付公钥的存放路径
+    public-key-path: classpath:/cert/pub_key.pem
+    #微信支付公钥ID
+    public-key-id: PUB_KEY_ID_0117276847122026022500181903000200
+    #回调地址（替换为你的ECS公网IP或域名）
+    notify-url: http://test-api.znoffer.com:8000/api/v1/order/callback/wechat_pay
