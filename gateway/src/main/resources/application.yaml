@@ -1,0 +1,57 @@
+server:
+  port: 8000
+
+spring:
+  application:
+    name: gateway-service
+  cloud:
+    nacos:
+      discovery:
+        server-addr: 127.0.0.1:8849
+        username: nacos
+        password: nacos123
+    gateway:
+      server:
+        webflux:
+          # 全局CORS配置
+          globalcors:
+            cors-configurations:
+              '[/**]':
+                allowed-origins: "*"
+                allowed-methods: "*"
+                allowed-headers: "*"
+                max-age: 3600
+          # 网关路由配置
+          routes:
+            # AI服务路由
+            - id: ai-service
+              uri: lb://ai-service
+              predicates:
+                - Path=/api/v1/resume/**,/api/v1/interview/**,/api/v1/chat/**
+              filters:
+                - StripPrefix=0
+
+            # 账户服务路由
+            - id: account-service
+              uri: lb://account-service
+              predicates:
+                - Path=/api/v1/account/**,/api/v1/wechat/**
+              filters:
+                - StripPrefix=0
+
+            # 产品服务路由
+            - id: product-service
+              uri: lb://product-service
+              predicates:
+                - Path=/api/v1/product/**,/api/v1/order/**,/api/v1/banner/**
+              filters:
+                - StripPrefix=0
+
+
+# 内部接口黑名单（不对外暴露）
+# 这些接口只能通过服务间内部调用（Feign），外部请求会被网关拦截
+internal:
+  api:
+    blacklist:
+      - /api/v1/account/benefit/task/updateStatus
+      - /api/v1/account/benefit/checkAndDeduct
