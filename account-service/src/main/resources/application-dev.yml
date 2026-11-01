@@ -54,7 +54,7 @@ sms:
 
 mybatis-plus:
   mapper-locations: classpath:mapper/*.xml
-  type-aliases-package: net.xdclass.model
+  type-aliases-package: net.abing.model
   configuration:
     map-underscore-to-camel-case: true
     log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
@@ -66,7 +66,7 @@ springdoc:
   group-configs:
     - group: 'default'
       paths-to-match: '/**'
-      packages-to-scan: net.xdclass.controller
+      packages-to-scan: net.abing.controller
   api-docs:
     enabled: true
   swagger-ui:
@@ -92,4 +92,4 @@ wechat:
     app-secret: 5c0d5a646b4f90202adf2f37c28e9676
     qr-code-expire-time: 120
     login-state-expire-time: 300
-    token: xdclass_wechat_token_2027
+    token: abing_wechat_token_2027

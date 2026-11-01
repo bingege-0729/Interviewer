@@ -89,7 +89,7 @@ sms:
 
 mybatis-plus:
   mapper-locations: classpath:mapper/*.xml
-  type-aliases-package: net.xdclass.model
+  type-aliases-package: net.abing.model
   configuration:
     map-underscore-to-camel-case: true
     log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
@@ -101,7 +101,7 @@ springdoc:
   group-configs:
     - group: 'default'
       paths-to-match: '/**'
-      packages-to-scan: net.xdclass.controller
+      packages-to-scan: net.abing.controller
   api-docs:
     enabled: true
   swagger-ui:
@@ -127,7 +127,7 @@ wechat:
     app-secret: 5c0d5a646b4f90202adf2f37c28e9676
     qr-code-expire-time: 120
     login-state-expire-time: 300
-    token: xdclass_wechat_token_2027
+    token: abing_wechat_token_2027
   pay:
     #商户号
     mch-id: 1727684712
@@ -136,7 +136,7 @@ wechat:
     #商户API证书序列号
     cert-serial-no: 19EC4EA464F61B6C757882327E6F805FB700FEA9
     #APIv3密钥
-    api-v3-key: Xdclass168Xdclass168Xdclass16888
+    api-v3-key: AbingPayPlaceholderKey168000
     #商户API证书私钥的存放路径
     private-key-path: classpath:/cert/apiclient_key.pem
     #微信支付公钥的存放路径

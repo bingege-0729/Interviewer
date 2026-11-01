@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
-<mapper namespace="net.xdclass.mapper.AccountBenefitMapper">
+<mapper namespace="net.abing.mapper.AccountBenefitMapper">
 
     <!-- 通用查询映射结果 -->
-    <resultMap id="BaseResultMap" type="net.xdclass.model.AccountBenefitDO">
+    <resultMap id="BaseResultMap" type="net.abing.model.AccountBenefitDO">
         <id column="id" property="id" />
         <result column="account_id" property="accountId" />
         <result column="benefit_code" property="benefitCode" />
