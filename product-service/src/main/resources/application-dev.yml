@@ -11,7 +11,7 @@ spring:
   rabbitmq:
     host: ${RABBITMQ_SERVER}
     port: 5672
-    virtual-host: /xd
+    virtual-host: /
     username: ${RABBITMQ_USER}
     password: ${RABBITMQ_PASSWORD}
     listener:
