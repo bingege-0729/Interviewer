@@ -1,0 +1,129 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Inter 字体 - 本地托管 */
+@font-face {
+  font-family: 'Inter';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('/fonts/Inter-Variable.woff2') format('woff2');
+}
+
+@layer base {
+  body {
+    @apply font-inter text-dark bg-light antialiased;
+  }
+}
+
+@layer components {
+  /* 自定义过渡效果 */
+  .transition-custom {
+    @apply transition-all duration-300 ease-in-out;
+  }
+
+  /* 卡片悬停效果 */
+  .card-hover {
+    @apply transition-custom hover:shadow-lg hover:-translate-y-1;
+  }
+
+  /* 品牌胶囊标签 */
+  .brand-pill {
+    @apply inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-primary/10 text-primary;
+  }
+
+  /* 按钮基础样式 */
+  .btn-primary {
+    @apply inline-flex items-center justify-center px-6 py-2.5 bg-primary text-white font-medium rounded-lg
+           hover:bg-primary-dark transition-custom focus:outline-none focus:ring-2 focus:ring-primary/50;
+  }
+
+  .btn-secondary {
+    @apply inline-flex items-center justify-center px-6 py-2.5 bg-white text-dark font-medium rounded-lg
+           border border-gray-200 hover:bg-gray-50 transition-custom focus:outline-none focus:ring-2 focus:ring-gray-200;
+  }
+
+  /* AI对话 Markdown 渲染样式 */
+  .prose pre {
+    @apply bg-gray-900 text-gray-100 rounded-lg p-4 overflow-x-auto text-xs;
+  }
+
+  .prose pre code {
+    @apply bg-transparent text-inherit p-0;
+  }
+
+  .prose img {
+    @apply rounded-lg max-w-full;
+  }
+
+  .prose a {
+    @apply text-primary hover:text-primary-dark underline;
+  }
+
+  .prose table {
+    @apply w-full text-sm border-collapse;
+  }
+
+  .prose th,
+  .prose td {
+    @apply border border-gray-200 px-3 py-2;
+  }
+
+  .prose th {
+    @apply bg-gray-50 font-semibold;
+  }
+
+  .prose blockquote {
+    @apply border-l-4 border-primary/30 pl-4 italic text-secondary;
+  }
+
+  /* 支付二维码卡片样式 */
+  .payment-card {
+    @apply my-4 border border-gray-200 rounded-xl overflow-hidden bg-gradient-to-br from-white to-gray-50 shadow-sm;
+  }
+
+  .payment-card-inner {
+    @apply flex flex-col items-center p-6 gap-4;
+  }
+
+  .payment-qr-area {
+    @apply w-52 h-52 border border-gray-100 rounded-lg overflow-hidden flex items-center justify-center bg-white p-2;
+  }
+
+  .payment-qr-canvas {
+    @apply w-full h-full;
+  }
+
+  .payment-info-area {
+    @apply text-center;
+  }
+
+  .payment-amount {
+    @apply text-2xl font-bold text-primary mb-1;
+  }
+
+  .payment-hint {
+    @apply text-sm text-secondary mb-1;
+  }
+
+  .payment-order {
+    @apply text-xs text-gray-400;
+  }
+
+  .payment-status {
+    @apply flex items-center gap-2 px-4 py-2 rounded-full text-sm;
+  }
+
+  .payment-status[data-status="pending"] {
+    @apply bg-amber-50 text-amber-600;
+  }
+
+  .payment-status[data-status="success"] {
+    @apply bg-green-50 text-green-600;
+  }
+
+  .payment-status[data-status="expired"] {
+    @apply bg-red-50 text-red-600;
+  }
+}

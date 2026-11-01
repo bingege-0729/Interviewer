@@ -1,0 +1,34 @@
+# IDE
+.idea/
+*.iml
+
+# Maven构建产物
+**/target/
+
+# 前端相关
+dcloud-interview-web/node_modules/
+dcloud-interview-web/dist/
+
+# Git
+.git/
+.gitignore
+
+# Docker
+**/Dockerfile
+**/.dockerignore
+
+# 测试
+**/src/test/
+
+# 文档
+*.md
+.qoder/
+
+# 系统文件
+.DS_Store
+*.log
+
+# Maven Wrapper
+.mvn/
+mvnw
+mvnw.cmd
