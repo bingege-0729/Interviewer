@@ -35,6 +35,7 @@ import net.abing.util.SpringBeanUtil;
 import net.abing.util.WechatPayUtil;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
@@ -65,6 +66,29 @@ public class ProductOrderServiceImpl implements ProductOrderService {
 
     private final PackageBenefitMapper packageBenefitMapper;
 
+    /** 订单号前缀：权益单 / 套餐单 */
+    private static final String ORDER_PREFIX_BENEFIT = "BFT";
+    private static final String ORDER_PREFIX_PACKAGE = "PKG";
+
+    /**
+     * 插入订单。订单号与唯一索引冲突时重新生成并重试一次。
+     * <p>
+     * 只重试一次是刻意为之：单次碰撞属于概率事件，重试能兜住；
+     * 连续两次失败说明生成规则本身有问题，应当把异常暴露出来，
+     * 而不是用循环把问题掩盖掉。
+     */
+    private void insertOrderWithRetry(ProductOrderDO order, String prefix) {
+        try {
+            productOrderMapper.insert(order);
+        } catch (DuplicateKeyException e) {
+            log.warn("订单号冲突，重新生成后重试, 冲突单号:{}", order.getOutTradeNo());
+            order.setId(null);
+            order.setOutTradeNo(CommonUtil.generateOrderNo(prefix));
+            productOrderMapper.insert(order);
+            log.info("重试创建订单成功, outTradeNo:{}", order.getOutTradeNo());
+        }
+    }
+
     /**
      * 创建权益订单
      * @param req
@@ -72,8 +96,9 @@ public class ProductOrderServiceImpl implements ProductOrderService {
      */
     @Override
     public JsonData createBenefitOrder(BenefitOrderCreateReq req) {
-
+        // 1.判断是否有该权益
         BenefitDO benefitDO = benefitMapper.selectById(req.getBenefitId());
+
         if(benefitDO == null){
             return JsonData.buildError("权益不存在");
         }
@@ -87,7 +112,7 @@ public class ProductOrderServiceImpl implements ProductOrderService {
 
         //构建订单对象
         ProductOrderDO productOrderDO = ProductOrderDO.builder()
-                .outTradeNo("BFT" + CommonUtil.getCurrentTimestamp() + CommonUtil.generateStringNumRandom(6))
+                .outTradeNo(CommonUtil.generateOrderNo(ORDER_PREFIX_BENEFIT))
                 .accountId(getCurrentAccountId())
                 .orderType(OrderTypeEnum.BENEFIT_ORDER.name())
                 .orderState(OrderStateEnum.NEW.name())
@@ -99,7 +124,8 @@ public class ProductOrderServiceImpl implements ProductOrderService {
                 .payAmount(payAmount)
                 .payType(PaymentEnum.valueOf(req.getPayType()).name())
                 .build();
-        productOrderMapper.insert(productOrderDO);
+
+        insertOrderWithRetry(productOrderDO, ORDER_PREFIX_BENEFIT);
         log.info("创建订单成功:{}",productOrderDO);
         return  handlePayment(productOrderDO,req.getPayType());
     }
@@ -118,7 +144,7 @@ public class ProductOrderServiceImpl implements ProductOrderService {
 
         //构建订单对象
         ProductOrderDO productOrderDO = ProductOrderDO.builder()
-                .outTradeNo("PKG" + CommonUtil.getCurrentTimestamp() + CommonUtil.generateStringNumRandom(6))
+                .outTradeNo(CommonUtil.generateOrderNo(ORDER_PREFIX_PACKAGE))
                 .accountId(getCurrentAccountId())
                 .orderType(OrderTypeEnum.PACKAGE_ORDER.name())
                 .orderState(OrderStateEnum.NEW.name())
@@ -130,7 +156,8 @@ public class ProductOrderServiceImpl implements ProductOrderService {
                 .payAmount(productPackageDO.getPrice())
                 .payType(PaymentEnum.valueOf(req.getPayType()).name())
                 .build();
-        productOrderMapper.insert(productOrderDO);
+
+        insertOrderWithRetry(productOrderDO, ORDER_PREFIX_PACKAGE);
         log.info("创建订单成功:{}",productOrderDO);
         return  handlePayment(productOrderDO,req.getPayType());
     }
@@ -260,7 +287,7 @@ public class ProductOrderServiceImpl implements ProductOrderService {
             //更新数据库
             Integer updated = updateOrderState(outTradeNo,transaction.getTransactionId(),OrderStateEnum.PAY.name());
             if(updated > 0){
-                processOrderBenefits(productOrderDO.getOutTradeNo());
+                sendBenefitsQuietly(productOrderDO.getOutTradeNo());
                 log.info("更新订单成功, outTradeNo:{}", outTradeNo);
             }else {
                 log.warn("更新订单失败, outTradeNo:{}", outTradeNo);
@@ -324,7 +351,7 @@ public class ProductOrderServiceImpl implements ProductOrderService {
             log.warn("回调异常补偿机制,第三方已经支付，本地没更新，订单号{}",outTradeNo);
             int updated = updateOrderState(outTradeNo,transaction.getTransactionId(),OrderStateEnum.PAY.name());
             if(updated > 0){
-                processOrderBenefits(productOrderDO.getOutTradeNo());
+                sendBenefitsQuietly(productOrderDO.getOutTradeNo());
                 log.info("更新订单成功, outTradeNo:{}", outTradeNo);
             }else {
                 log.warn("更新订单失败，冲突或者不存在, outTradeNo:{}", outTradeNo);
@@ -486,6 +513,21 @@ public class ProductOrderServiceImpl implements ProductOrderService {
 
     }
 
+
+    /**
+     * 发送权益发放消息，异常不外抛。
+     * <p>
+     * 走到这里时订单状态已经落库为已支付，向上抛异常只会让微信重推回调，
+     * 而重推会被「订单已支付」的判断直接短路，权益依旧发不出去。
+     * 所以这里只记日志，交给定时对账任务按订单状态反查补发。
+     */
+    private void sendBenefitsQuietly(String outTradeNo) {
+        try {
+            processOrderBenefits(outTradeNo);
+        } catch (Exception e) {
+            log.error("权益发放消息发送失败，等待对账补偿, outTradeNo:{}", outTradeNo, e);
+        }
+    }
 
     /**
      * 处理订单权益发放，支付成功后发送MQ消息到账号服务

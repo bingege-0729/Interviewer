@@ -1,7 +1,9 @@
 package net.abing.exception;
 
 import lombok.extern.slf4j.Slf4j;
+import net.abing.enums.BizCodeEnum;
 import net.abing.util.JsonData;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.validation.BindException;
 import org.springframework.validation.BindingResult;
 import org.springframework.validation.FieldError;
@@ -74,6 +76,18 @@ public class CustomExceptionHandler {
     public JsonData handleNoResourceFoundException(NoResourceFoundException e) {
         log.warn("[资源未找到] path: {}", e.getResourcePath());
         return JsonData.buildCodeAndMsg(404, "资源未找到");
+    }
+
+    /**
+     * 唯一索引冲突。
+     * <p>
+     * 走到这里基本只有一种可能：同一笔业务被提交了两次（重复点击、消息重投）。
+     * 数据库唯一索引拦住了第二次写入，语义上等价于「重复提交」，不需要报系统异常。
+     */
+    @ExceptionHandler(value = DuplicateKeyException.class)
+    public JsonData handleDuplicateKeyException(DuplicateKeyException e){
+        log.warn("[唯一键冲突] {}", e.getMessage());
+        return JsonData.buildResult(BizCodeEnum.REPEAT_SUBMIT_IDEMPOTENT);
     }
 
     /**

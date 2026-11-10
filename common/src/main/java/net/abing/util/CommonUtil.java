@@ -11,7 +11,9 @@ import java.io.IOException;
 import java.io.PrintWriter;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.net.InetAddress;
 import java.util.*;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -119,6 +121,48 @@ public class CommonUtil {
     public static long getCurrentTimestamp() {
         return System.currentTimeMillis();
     }
+
+    /**
+     * 当前节点的短标识，用于避免多实例在同一毫秒生成相同单号。
+     * 优先读环境变量 NODE_ID（容器部署时注入），取不到则用本机 IP 尾段。
+     */
+    private static final String NODE_ID = resolveNodeId();
+
+    private static String resolveNodeId() {
+        String env = System.getenv("NODE_ID");
+        if (StrUtil.isNotBlank(env)) {
+            String trimmed = env.trim();
+            return trimmed.length() > 3 ? trimmed.substring(trimmed.length() - 3) : trimmed;
+        }
+        try {
+            String[] parts = InetAddress.getLocalHost().getHostAddress().split("\\.");
+            if (parts.length == 4) {
+                return String.format("%03d", Integer.parseInt(parts[3]) % 1000);
+            }
+        } catch (Exception ignored) {
+            // 取不到 IP 时退化为进程内随机，仅保证同机多实例不撞
+        }
+        return String.format("%03d", ThreadLocalRandom.current().nextInt(1000));
+    }
+
+    /**
+     * 生成业务单号：前缀 + 毫秒时间戳 + 节点标识 + 5 位随机后缀，共 24 位。
+     * <p>
+     * 节点标识只能消除「多实例同毫秒」这一最主要的碰撞来源，
+     * 单号唯一的最终保障仍是数据库唯一索引，冲突后由调用方重新生成并重试。
+     *
+     * @param prefix 业务前缀，如 PKG / BFT
+     */
+    public static String generateOrderNo(String prefix) {
+        StringBuilder builder = new StringBuilder(24);
+        builder.append(prefix).append(getCurrentTimestamp()).append(NODE_ID);
+        ThreadLocalRandom random = ThreadLocalRandom.current();
+        for (int i = 0; i < 5; i++) {
+            builder.append(ALL_CHAR_NUM.charAt(random.nextInt(ALL_CHAR_NUM.length())));
+        }
+        return builder.toString();
+    }
+
     public static String generateStringNumRandom(int length) {
         //生成随机数字和字母,
         Random random = new Random();

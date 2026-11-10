@@ -12,6 +12,7 @@ import net.abing.model.BenefitTaskDO;
 import net.abing.req.BenefitTaskUpdateReq;
 import net.abing.service.BenefitTaskService;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -131,7 +132,12 @@ public class BenefitTaskServiceImpl implements BenefitTaskService {
                 .lockState(BenefitTaskStateEnum.LOCK.name())
                 .build();
 
-        benefitTaskMapper.insert(taskDO);
+        try {
+            benefitTaskMapper.insert(taskDO);
+        } catch (DuplicateKeyException e) {
+            log.error("权益已扣减，请勿重复请求");
+            throw new RuntimeException(e);
+        }
 
         log.info("保存task记录成功 {}", taskDO);
 

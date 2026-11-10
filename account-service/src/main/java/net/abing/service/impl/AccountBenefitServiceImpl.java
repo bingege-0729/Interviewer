@@ -23,6 +23,8 @@ import net.abing.service.BenefitTaskService;
 import net.abing.util.CommonUtil;
 import net.abing.util.JsonData;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
+import org.springframework.dao.DuplicateKeyException;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -158,7 +160,7 @@ public class AccountBenefitServiceImpl implements AccountBenefitService {
 
         Long selectCount = accountBenefitMapper.selectCount(new LambdaQueryWrapper<AccountBenefitDO>()
                 .eq(AccountBenefitDO::getProductOrderId, message.getOrderId())
-                .eq(AccountBenefitDO::getBenefitId, benefitItem.getBenefitId())
+                .eq(AccountBenefitDO::getBenefitId, benefitItem.getBenefitCode())
         );
         if(selectCount > 0){
             log.info("幂等检查通过，订单ID:{}, 权益ID:{}",message.getOrderId(),benefitItem.getBenefitId());
@@ -181,7 +183,20 @@ public class AccountBenefitServiceImpl implements AccountBenefitService {
                 .endTime(calculateExpireDays(new Date(), benefitItem.getValidDays()))
                 .build();
 
-        accountBenefitMapper.insert(accountBenefitDO);
+        try{
+        try {
+            accountBenefitMapper.insert(accountBenefitDO);
+        } catch (DuplicateKeyException e) {
+            // uk_order_benefit 兜底：并发下两个消费者可能同时通过上面的 selectCount，
+            // 后插入的一方会撞唯一索引，说明权益已由先到者发放，跳过即可，不需要报错。
+            log.info("权益已发放，跳过重复插入, orderId:{}, benefitId:{}",
+                    message.getOrderId(), benefitItem.getBenefitId());
+        }
+    }catch (DuplicateKeyException e){
+            log.info("已发放该权益");
+            return;
+        }
+
     }
 
     /**
