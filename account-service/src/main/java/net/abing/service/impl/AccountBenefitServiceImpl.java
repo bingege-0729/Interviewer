@@ -2,6 +2,7 @@ package net.abing.service.impl;
 
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -90,33 +91,56 @@ public class AccountBenefitServiceImpl implements AccountBenefitService {
             return JsonData.buildResult(BizCodeEnum.BENEFIT_NOT_ENOUGH);
         }
 
-        //创建权益任务记录表
-        AccountBenefitDO accountBenefitDO = accountBenefitDOS.getFirst();
         int count = benefitCheckReq.getCount()!=null ? benefitCheckReq.getCount():1;
 
+        //逐张卡尝试扣减：UPDATE 条件里带上 remaining_count >= count，
+        //让「判断余额」和「扣减」在数据库里一步完成，
+        //返回 0 说明这张卡已被并发请求扣空，换下一张继续。
+        AccountBenefitDO picked = null;
+        for (AccountBenefitDO card : accountBenefitDOS) {
+            int affected = accountBenefitMapper.update(null,
+                    new LambdaUpdateWrapper<AccountBenefitDO>()
+                            .setSql("remaining_count = remaining_count - " + count)
+                            .eq(AccountBenefitDO::getId, card.getId())
+                            .ge(AccountBenefitDO::getRemainingCount, count));
+            if (affected > 0) {
+                picked = card;
+                break;
+            }
+            log.info("权益卡余额不足或被并发抢占，尝试下一张, accountBenefitId:{}", card.getId());
+        }
+
+        if (picked == null) {
+            log.warn("所有权益卡均扣减失败, accountId:{}, benefitCode:{}",
+                    benefitCheckReq.getAccountId(), benefitCheckReq.getBenefitCode());
+            return JsonData.buildResult(BizCodeEnum.BENEFIT_NOT_ENOUGH);
+        }
+
+        //先扣减成功，再落任务记录并投递延迟检查。
+        //顺序反过来的话，扣减失败会留下一条永远完不成的 LOCK 任务，
+        //5 分钟后的延迟检查会把它当成业务失败把次数加回去，用户凭空多一次权益。
         BenefitTaskDO task = benefitTaskService.saveTask(
                 benefitCheckReq.getBusinessId(),
                 benefitCheckReq.getBenefitCode(),
                 benefitCheckReq.getAccountId(),
-                accountBenefitDO.getId(),
+                picked.getId(),
                 count
                 );
 
         //发送延迟消息
         sendDelayCheckMessage(task.getMessageId(),benefitCheckReq.getBusinessId());
 
-        //扣减权益
-        accountBenefitDO.setRemainingCount(accountBenefitDO.getRemainingCount() - count);
-        accountBenefitMapper.updateById(accountBenefitDO);
-        log.info("扣减权益成功：{}", accountBenefitDO);
+        log.info("扣减权益成功：accountBenefitId:{}, remaining:{} -> {}",
+                picked.getId(), picked.getRemainingCount(), picked.getRemainingCount() - count);
 
         BenefitCheckResultDTO benefitCheckResultDTO = BenefitCheckResultDTO.builder()
                 .success(true)
                 .messageId(task.getMessageId())
                 .businessId(benefitCheckReq.getBusinessId())
                 .benefitCode(benefitCheckReq.getBenefitCode())
-                .accountBenefitId(accountBenefitDO.getId())
-                .remainingCount(accountBenefitDO.getRemainingCount())
+                .accountBenefitId(picked.getId())
+                //picked 是查询时的快照，CAS 改的是数据库，内存里的值没变，这里要手动减
+                .remainingCount(picked.getRemainingCount() - count)
                 .deductedCount(count)
                 .build();
         //构建结果返回
