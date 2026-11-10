@@ -2,6 +2,7 @@ package net.abing.service.impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.extension.conditions.query.QueryChainWrapper;
 import lombok.extern.slf4j.Slf4j;
 import net.abing.enums.BenefitTaskStateEnum;
@@ -29,92 +30,107 @@ public class BenefitTaskServiceImpl implements BenefitTaskService {
     private AccountBenefitMapper accountBenefitMapper;
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public void checkAndCompensate(String messageId, Integer checkLevel) {
 
-        //查询任务记录
-        BenefitTaskDO benefitTaskDO = benefitTaskMapper.selectOne(new LambdaQueryWrapper<BenefitTaskDO>().eq(BenefitTaskDO::getMessageId, messageId));
+        BenefitTaskDO benefitTaskDO = selectByMessageId(messageId);
         if (benefitTaskDO == null) {
             log.error("消息id对应的记录不存在 {}", messageId);
             return;
         }
-        //获取枚举状态
-        BenefitTaskStateEnum currentStatus = BenefitTaskStateEnum.valueOf(benefitTaskDO.getLockState());
-        log.info("触发第{}次检查 ，任务内容:{}", checkLevel, benefitTaskDO);
 
-        //判断状态
-        if (currentStatus.isFinish()) {
-            log.info("任务已经完成，无需补偿 {}", benefitTaskDO);
-            return;
-        }
-        if(currentStatus.isCancel()){
-            log.info("任务已经取消，无需补偿 {}", benefitTaskDO);
+        log.info("触发第{}次检查，任务内容:{}", checkLevel, benefitTaskDO);
+
+        // 第一次检查只观察，给业务留出创建面试的时间，不急着退回权益
+        if (checkLevel == null || checkLevel < 2) {
+            log.info("第1次检查，任务仍为锁定状态，继续等待业务结果, messageId:{}", messageId);
             return;
         }
 
-        // lock状态下，判断是不是第二次检查
-        if (currentStatus.isLock() && checkLevel >= 2) {
-            log.info("任务已经锁定，且是第二次检查， {}", benefitTaskDO);
-
-            //恢复权益
-            compensateBenefit(benefitTaskDO);
-
-        }else {
-            log.info("第一次检查，状态是lock，任务正在处理中，请稍等 {}", benefitTaskDO);
+        // 把「推进状态」本身当作锁：只有真正把 LOCK 改成 CANCEL 的那一次才有资格退权益。
+        // 1min 和 5min 两条延迟消息是独立投递的，basicNack 也允许重投，
+        // 先查状态再改的写法会让同一个 messageId 进来两次，把次数加回两遍。
+        if (!transitState(messageId, BenefitTaskStateEnum.LOCK, BenefitTaskStateEnum.CANCEL)) {
+            log.info("任务已被其他检查推进，跳过本次补偿, messageId:{}, 当前状态:{}",
+                    messageId, benefitTaskDO.getLockState());
+            return;
         }
+
+        compensateBenefit(benefitTaskDO);
+        log.info("第二次检查任务仍未完成，已回滚权益, messageId:{}", messageId);
     }
 
-    private void compensateBenefit(BenefitTaskDO benefitTaskDO) {
-        log.info("开始恢复权益 {}", benefitTaskDO);
-        AccountBenefitDO accountBenefitDO = accountBenefitMapper.selectById(benefitTaskDO.getAccountBenefitId());
-        accountBenefitDO.setRemainingCount(accountBenefitDO.getRemainingCount() + benefitTaskDO.getUseTimes());
-        accountBenefitMapper.updateById(accountBenefitDO);
-        log.info("恢复权益成功 {}", accountBenefitDO);
+    /**
+     * 推进任务状态，并把「原状态」作为更新条件。
+     * 返回 true 表示本次调用抢到了状态流转权，false 表示已经被别人推进过。
+     */
+    private boolean transitState(String messageId, BenefitTaskStateEnum from, BenefitTaskStateEnum to) {
+        int affected = benefitTaskMapper.update(null,
+                new LambdaUpdateWrapper<BenefitTaskDO>()
+                        .set(BenefitTaskDO::getLockState, to.name())
+                        .eq(BenefitTaskDO::getMessageId, messageId)
+                        .eq(BenefitTaskDO::getLockState, from.name()));
+        return affected > 0;
+    }
 
+    private BenefitTaskDO selectByMessageId(String messageId) {
+        return benefitTaskMapper.selectOne(
+                new LambdaQueryWrapper<BenefitTaskDO>().eq(BenefitTaskDO::getMessageId, messageId));
+    }
+
+    /**
+     * 退回权益次数。用相对值更新，并用 LEAST 兜住总数上限，
+     * 即使补偿链路将来再出问题，也不会把可用次数加超。
+     */
+    private void compensateBenefit(BenefitTaskDO benefitTaskDO) {
+        int affected = accountBenefitMapper.update(null,
+                new LambdaUpdateWrapper<AccountBenefitDO>()
+                        .setSql("remaining_count = LEAST(remaining_count + "
+                                + benefitTaskDO.getUseTimes() + ", total_count)")
+                        .eq(AccountBenefitDO::getId, benefitTaskDO.getAccountBenefitId()));
+        if (affected > 0) {
+            log.info("恢复权益成功, accountBenefitId:{}, 次数:+{}",
+                    benefitTaskDO.getAccountBenefitId(), benefitTaskDO.getUseTimes());
+        } else {
+            log.error("恢复权益失败，权益记录不存在, accountBenefitId:{}", benefitTaskDO.getAccountBenefitId());
+        }
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public boolean updateTaskStatus(BenefitTaskUpdateReq req) {
-        //查询任务记录
-        BenefitTaskDO benefitTaskDO = benefitTaskMapper.selectOne(new LambdaQueryWrapper<BenefitTaskDO>().eq(BenefitTaskDO::getMessageId, req.getMessageId()));
+
+        BenefitTaskDO benefitTaskDO = selectByMessageId(req.getMessageId());
         if (benefitTaskDO == null) {
             log.info("消息id对应的记录不存在 {}", req.getMessageId());
             return false;
         }
 
-        //获取枚举状态
-        BenefitTaskStateEnum currentStatus = BenefitTaskStateEnum.valueOf(benefitTaskDO.getLockState());
-        log.info("任务当前状态 {}", currentStatus);
+        log.info("任务当前状态 {}, 本次操作:{}", benefitTaskDO.getLockState(), req.getOperation());
 
-        //判断状态
-        if (currentStatus.isFinish()) {
-            log.info("任务已经完成，无需补偿 {}", benefitTaskDO);
-            return true; //认为是成功的
-        }
-        if(currentStatus.isCancel()){
-            log.info("任务已经取消，无需补偿 {}", benefitTaskDO);
+        if (BenefitTaskStateEnum.FINISH.getCode().equals(req.getOperation())) {
+            // LOCK → FINISH。抢不到说明已是终态，重复回调按成功处理，保证接口幂等
+            if (!transitState(req.getMessageId(), BenefitTaskStateEnum.LOCK, BenefitTaskStateEnum.FINISH)) {
+                log.info("任务已是终态，忽略重复的完成回调, messageId:{}", req.getMessageId());
+                return true;
+            }
+            log.info("任务标记完成 {}", req.getMessageId());
             return true;
         }
 
-        //更加操作类型更新状态
-        if(BenefitTaskStateEnum.FINISH.getCode().equals(req.getOperation())){
-            //标记完成
-            benefitTaskDO.setLockState(BenefitTaskStateEnum.FINISH.name());
-            benefitTaskMapper.updateById(benefitTaskDO);
-            log.info("任务标记完成 {}", benefitTaskDO);
-            return true;
-        } else if(BenefitTaskStateEnum.CANCEL.getCode().equals(req.getOperation())){
-            //回滚补偿权益
+        if (BenefitTaskStateEnum.CANCEL.getCode().equals(req.getOperation())) {
+            // 先抢状态再退权益：抢到的人才负责退，抢不到的直接返回，避免重复加次数
+            if (!transitState(req.getMessageId(), BenefitTaskStateEnum.LOCK, BenefitTaskStateEnum.CANCEL)) {
+                log.info("任务已是终态，忽略重复的取消回调, messageId:{}", req.getMessageId());
+                return true;
+            }
             compensateBenefit(benefitTaskDO);
-
-            //标记取消
-            benefitTaskDO.setLockState(BenefitTaskStateEnum.CANCEL.name());
-            benefitTaskMapper.updateById(benefitTaskDO);
-            log.info("任务标记取消 {}", benefitTaskDO);
+            log.info("任务标记取消并回滚权益 {}", req.getMessageId());
             return true;
-        }else {
-            log.info("无效的操作 {},任务:{}", req.getOperation(), benefitTaskDO);
-            return false;
         }
+
+        log.info("无效的操作 {},任务:{}", req.getOperation(), req.getMessageId());
+        return false;
     }
 
     @Override
@@ -135,8 +151,11 @@ public class BenefitTaskServiceImpl implements BenefitTaskService {
         try {
             benefitTaskMapper.insert(taskDO);
         } catch (DuplicateKeyException e) {
-            log.error("权益已扣减，请勿重复请求");
-            throw new RuntimeException(e);
+            // uk_biz_benefit 拦住的是「同一业务同一权益已经扣过」，属于重复请求而非系统故障。
+            // 这里必须原样抛出：包成 RuntimeException 会让全局处理器按 Exception 兜底，
+            // 最终返回「系统异常」，而不是我们想要的「重复提交」。
+            log.warn("权益已扣减，拒绝重复请求, businessId:{}, benefitCode:{}", businessId, benefitCode);
+            throw e;
         }
 
         log.info("保存task记录成功 {}", taskDO);
