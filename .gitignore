@@ -58,3 +58,11 @@ dcloud-interview-web/dist/
 .vscode/
 .qoder/
 .workbuddy/
+### 敏感配置：真实密码/密钥只保留在本地，不入库 ###
+**/src/main/resources/application-dev.yml
+**/src/main/resources/application-prod.yml
+**/src/main/resources/application-local.yml
+*.pem
+*.p12
+*.key
+cert/
